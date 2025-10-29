@@ -2,7 +2,7 @@
 const config = {
   // Configuración de la API
   api: {
-    baseUrl: __DEV__ ? 'http://192.168.1.10:3000/api' : 'https://tu-produccion-api.com/api',
+    baseUrl: __DEV__ ? 'http://10.90.228.20:3000/api' : 'https://tu-produccion-api.com/api',
     timeout: 30000, // 30 segundos (aumentado para Overpass)
     retryAttempts: 3,
   },
