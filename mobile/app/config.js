@@ -1,8 +1,22 @@
+import Constants from 'expo-constants';
+
+// Intentar inferir el host LAN desde la URL de desarrollo de Expo
+const inferLanHost = (() => {
+  try {
+    const hostUri = (Constants?.expoConfig?.hostUri || '').split(':')[0];
+    return hostUri || null;
+  } catch {
+    return null;
+  }
+})();
+
 // Configuración de la aplicación móvil
 const config = {
   // Configuración de la API
   api: {
-    baseUrl: __DEV__ ? 'http://10.90.228.20:3000/api' : 'https://tu-produccion-api.com/api',
+    baseUrl: __DEV__
+      ? (process.env.EXPO_PUBLIC_API_URL || (inferLanHost ? `http://${inferLanHost}:3000/api` : 'http://localhost:3000/api'))
+      : (process.env.EXPO_PUBLIC_API_URL || 'https://tu-produccion-api.com/api'),
     timeout: 30000, // 30 segundos (aumentado para Overpass)
     retryAttempts: 3,
   },

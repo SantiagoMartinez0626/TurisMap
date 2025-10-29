@@ -18,7 +18,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Esta app necesita acceso a tu ubicación para mostrar atracciones turísticas cercanas."
+        "NSLocationWhenInUseUsageDescription": "Esta app necesita acceso a tu ubicación para mostrar atracciones turísticas cercanas.",
+        "NSFaceIDUsageDescription": "Usamos Face ID/Touch ID para autenticarte de forma segura."
       }
     },
     "android": {

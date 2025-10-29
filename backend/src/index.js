@@ -2,10 +2,88 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const config = require('./config');
+const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = config.server.port;
 const HOST = config.server.host;
+// Conexión a MongoDB
+mongoose.connect(config.db.uri, {
+  serverSelectionTimeoutMS: 5000,
+}).then(() => {
+  console.log('✅ Conectado a MongoDB');
+}).catch((err) => {
+  console.error('❌ Error conectando a MongoDB:', err.message);
+});
+
+// Modelos
+const sessionSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true, index: true },
+  refreshToken: { type: String, required: true, index: true },
+  createdAt: { type: Date, default: Date.now },
+  lastUsedAt: { type: Date, default: Date.now },
+}, { collection: 'sessions' });
+
+const Session = mongoose.model('Session', sessionSchema);
+
+// Utilidades JWT
+function createAccessToken(payload) {
+  return jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+}
+
+function createRefreshToken() {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+// Rutas de autenticación
+app.post('/auth/biometric-login', async (req, res) => {
+  try {
+    const { deviceId } = req.body || {};
+    if (!deviceId) return res.status(400).json({ error: 'deviceId es requerido' });
+
+    const accessToken = createAccessToken({ deviceId });
+    const refreshToken = createRefreshToken();
+
+    await Session.create({ deviceId, refreshToken });
+
+    res.json({ token: accessToken, refreshToken });
+  } catch (e) {
+    console.error('Error en /auth/biometric-login:', e);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+app.post('/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) return res.status(400).json({ error: 'refreshToken es requerido' });
+
+    const session = await Session.findOne({ refreshToken });
+    if (!session) return res.status(401).json({ error: 'Refresh token inválido' });
+
+    session.lastUsedAt = new Date();
+    await session.save();
+
+    const newAccessToken = createAccessToken({ deviceId: session.deviceId });
+    res.json({ token: newAccessToken });
+  } catch (e) {
+    console.error('Error en /auth/refresh:', e);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+app.post('/auth/logout', async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) return res.status(400).json({ error: 'refreshToken es requerido' });
+    await Session.deleteOne({ refreshToken });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error en /auth/logout:', e);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
 
 // Middleware
 app.use(cors(config.cors));

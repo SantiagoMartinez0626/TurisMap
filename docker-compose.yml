@@ -16,6 +16,7 @@ services:
     environment:
       - EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
       - NODE_ENV=development
+      - EXPO_PUBLIC_API_URL=http://192.168.110.25:3000/api
   backend:
     container_name: backend
     build:
@@ -28,6 +29,22 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
+      - MONGODB_URI=mongodb://mongo:27017/turismap
+      - JWT_SECRET=supersecret_dev_change_me
     stdin_open: true
     tty: true
     restart: unless-stopped
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:6
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

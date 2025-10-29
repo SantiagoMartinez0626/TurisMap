@@ -7,6 +7,18 @@ const config = {
     environment: process.env.NODE_ENV || 'development',
   },
 
+  // Base de datos
+  db: {
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/turismap',
+  },
+
+  // JWT
+  jwt: {
+    secret: process.env.JWT_SECRET || 'change_me',
+    expiresIn: '15m',
+    refreshExpiresIn: '30d',
+  },
+
   // Configuración de OpenStreetMap + Overpass API
   osm: {
     overpassBaseUrl: 'https://overpass-api.de/api/interpreter',
