@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const mongoose = require('mongoose');
+const { authMiddleware } = require('./middleware/auth');
+const authRoutes = require('./routes/auth');
 const config = require('./config');
 
 const app = express();
@@ -10,6 +13,22 @@ const HOST = config.server.host;
 // Middleware
 app.use(cors(config.cors));
 app.use(express.json());
+
+// Conexión a MongoDB
+async function connectToMongo() {
+  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/turismap';
+  await mongoose.connect(uri, {
+    autoIndex: true,
+  });
+  console.log('✅ Conectado a MongoDB');
+}
+connectToMongo().catch((err) => {
+  console.error('❌ Error conectando a MongoDB:', err.message);
+  process.exit(1);
+});
+
+// Rutas de autenticación (públicas)
+app.use('/api/auth', authRoutes);
 
 // Función para construir consulta Overpass QL
 function buildOverpassQuery(lat, lng, radius, categoriesInput) {
@@ -293,8 +312,8 @@ app.get('/', (req, res) => {
   });
 });
 
-// Obtener categorías disponibles
-app.get('/api/places/categories', (req, res) => {
+// Obtener categorías disponibles (requiere auth)
+app.get('/api/places/categories', authMiddleware, (req, res) => {
   const categories = Object.keys(config.categories).map(key => ({
     id: key,
     name: config.categories[key].name,
@@ -306,8 +325,8 @@ app.get('/api/places/categories', (req, res) => {
   res.json({ categories, count: categories.length });
 });
 
-// Obtener lugares cercanos
-app.get('/api/places/nearby', async (req, res) => {
+// Obtener lugares cercanos (requiere auth)
+app.get('/api/places/nearby', authMiddleware, async (req, res) => {
   try {
     const { lat, lng, radius = config.osm.defaultRadius, category } = req.query;
     
@@ -351,8 +370,8 @@ app.get('/api/places/nearby', async (req, res) => {
   }
 });
 
-// Obtener detalles de un lugar específico
-app.get('/api/places/details/:placeId', async (req, res) => {
+// Obtener detalles de un lugar específico (requiere auth)
+app.get('/api/places/details/:placeId', authMiddleware, async (req, res) => {
   try {
     const { placeId } = req.params;
     
@@ -377,8 +396,8 @@ app.get('/api/places/details/:placeId', async (req, res) => {
   }
 });
 
-// Buscar lugares por categoría
-app.get('/api/places/search', async (req, res) => {
+// Buscar lugares por categoría (requiere auth)
+app.get('/api/places/search', authMiddleware, async (req, res) => {
   try {
     const { lat, lng, radius = config.osm.defaultRadius, category } = req.query;
     

@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import axios from 'axios'
+import { AuthContext } from './auth/AuthContext.jsx'
 
 import iconUrl from 'leaflet/dist/images/marker-icon.png'
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png'
@@ -35,7 +36,8 @@ function LoadingOverlay({ message = 'Cargando lugares…' }) {
   )
 }
 
-export default function MapView() {
+export default function MapView({ activeTab = 'filters' }) {
+  const { user } = useContext(AuthContext)
   const [center, setCenter] = useState({ lat: 40.4168, lng: -3.7038 }) // Madrid por defecto
   const [places, setPlaces] = useState([])
   const [loading, setLoading] = useState(false)
@@ -44,8 +46,9 @@ export default function MapView() {
   const [categories, setCategories] = useState([])
   const [selected, setSelected] = useState({})
   const [autoFetched, setAutoFetched] = useState(false)
-  const [follow, setFollow] = useState(true)
   const watchIdRef = useRef(null)
+  const [favoritesById, setFavoritesById] = useState({})
+  const [selectedFavoriteIds, setSelectedFavoriteIds] = useState({})
 
   const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
   const tileAttribution = '&copy; OpenStreetMap contributors'
@@ -58,13 +61,12 @@ export default function MapView() {
       const opts = { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
       navigator.geolocation.getCurrentPosition(onFirst, () => {}, opts)
 
-      if (follow) {
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (pos) => setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          () => {},
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
-        )
-      }
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
+      )
+
       return () => {
         if (watchIdRef.current) {
           navigator.geolocation.clearWatch(watchIdRef.current)
@@ -72,7 +74,7 @@ export default function MapView() {
         }
       }
     }
-  }, [follow])
+  }, [])
 
   // Cargar categorías desde backend
   useEffect(() => {
@@ -170,7 +172,65 @@ export default function MapView() {
   }, [categories])
 
   // Icono para la ubicación del usuario
-  const userIcon = useMemo(() => createDivIcon('#111827', '📍'), [])
+  const userIcon = useMemo(() => createDivIcon('#4f46e5', '📍'), [])
+  const profileInitials = useMemo(() => {
+    const source = user?.name || user?.email || '?'
+    const parts = String(source).trim().split(/\s+/)
+    const letters = `${parts[0]?.[0] || ''}${parts[1]?.[0] || ''}`.toUpperCase()
+    return letters || String(source).slice(0, 1).toUpperCase()
+  }, [user])
+  const memberSince = useMemo(() => {
+    return user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : null
+  }, [user])
+
+  // Favoritos: cargar por usuario
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      const raw = localStorage.getItem(`tm_favs_${user.id}`)
+      if (raw) {
+        const arr = JSON.parse(raw)
+        const map = {}
+        arr.forEach((p) => { if (p?.id) map[p.id] = p })
+        setFavoritesById(map)
+      } else {
+        setFavoritesById({})
+      }
+    } catch {
+      setFavoritesById({})
+    }
+  }, [user?.id])
+
+  // Guardar favoritos
+  useEffect(() => {
+    if (!user?.id) return
+    const arr = Object.values(favoritesById)
+    localStorage.setItem(`tm_favs_${user.id}`, JSON.stringify(arr))
+  }, [favoritesById, user?.id])
+
+  const favorites = useMemo(() => Object.values(favoritesById), [favoritesById])
+  const isFavorite = useCallback((id) => !!favoritesById[id], [favoritesById])
+  const toggleFavorite = useCallback((place) => {
+    setFavoritesById((prev) => {
+      const next = { ...prev }
+      if (next[place.id]) {
+        delete next[place.id]
+      } else {
+        next[place.id] = {
+          id: place.id,
+          name: place.name,
+          location: place.location || { lat: place.lat, lng: place.lng },
+          category: place.category || null,
+          distance: place.distance || 0
+        }
+      }
+      return next
+    })
+  }, [])
+  const toggleFavoriteSelection = useCallback((id) => {
+    setSelectedFavoriteIds((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+  const clearFavoriteSelection = useCallback(() => setSelectedFavoriteIds({}), [])
 
   const fetchNearby = async () => {
     try {
@@ -201,7 +261,7 @@ export default function MapView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center.lat, center.lng])
 
-  function PlacePopupContent({ place }) {
+  function PlacePopupContent({ place, isFav, onToggleFav }) {
     const [details, setDetails] = useState(null)
     const [loadingDetails, setLoadingDetails] = useState(false)
     const [errorDetails, setErrorDetails] = useState(null)
@@ -224,8 +284,15 @@ export default function MapView() {
     }, [place.id])
 
     return (
-      <div style={{ minWidth: 220, textAlign: 'center' }}>
-        <div style={{ fontWeight: 700 }}>{place.name}</div>
+      <div style={{ minWidth: 220, textAlign: 'center', position: 'relative' }}>
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFav(place) }}
+          title={isFav ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          style={{ position: 'absolute', right: 8, top: 8, background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 9999, width: 28, height: 28, display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+        >
+          <span style={{ color: isFav ? '#ef4444' : '#9ca3af', fontSize: 18, lineHeight: 1 }}>{isFav ? '❤' : '♡'}</span>
+        </button>
+        <div style={{ fontWeight: 700, padding: '0 64px' }}>{place.name}</div>
         <div style={{ fontSize: 12, color: '#6b7280' }}>{place.category || 'Lugar'}</div>
         <div style={{ fontSize: 12 }}>{place.distance} m</div>
         {loadingDetails && <div style={{ fontSize: 12, marginTop: 6 }}>Cargando detalles…</div>}
@@ -246,85 +313,178 @@ export default function MapView() {
     )
   }
 
-  const markers = useMemo(() => places.map((p) => ({
-    id: p.id,
-    name: p.name,
-    lat: p.location.lat,
-    lng: p.location.lng,
-    distance: p.distance,
-    category: p.category
-  })), [places])
+  const markers = useMemo(() => {
+    if (activeTab === 'favorites') {
+      const chosen = Object.keys(selectedFavoriteIds).filter((k) => selectedFavoriteIds[k])
+      const list = chosen.length > 0 ? favorites.filter((f) => chosen.includes(f.id)) : favorites
+      return list.map((p) => ({
+        id: p.id,
+        name: p.name,
+        lat: p.location.lat,
+        lng: p.location.lng,
+        distance: p.distance,
+        category: p.category
+      }))
+    }
+    return places.map((p) => ({
+      id: p.id,
+      name: p.name,
+      lat: p.location.lat,
+      lng: p.location.lng,
+      distance: p.distance,
+      category: p.category
+    }))
+  }, [activeTab, favorites, selectedFavoriteIds, places])
 
   return (
     <div style={{ height: '100%', display: 'flex' }}>
-      <aside style={{ width: 'min(320px, 92vw)', height: '100%', borderRight: '1px solid #e5e7eb', background: '#ffffff', padding: 14, overflowY: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-          <div style={{ fontWeight: 800, fontSize: 16, textAlign: 'center' }}>Filtros</div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 12 }}>
-          {categories.map((c) => {
-            const active = !!selected[c.id]
-            return (
+      <aside style={{ width: 'min(320px, 92vw)', height: '100%', borderRight: '1px solid #e5e7eb', background: '#ffffff', padding: 14, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ height: 8 }} />
+
+        {activeTab === 'filters' && (
+          <>
+            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridAutoRows: 'minmax(100px, 1fr)', gap: 12, marginBottom: 6 }}>
+              {categories.map((c) => {
+                const active = !!selected[c.id]
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelected((s) => ({ ...s, [c.id]: !s[c.id] }))}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      borderRadius: 14,
+                      padding: '12px',
+                      border: active ? '1px solid #c7d2fe' : '1px solid #e5e7eb',
+                      background: active ? '#eef2ff' : '#ffffff',
+                      color: '#0f172a',
+                      cursor: 'pointer',
+                      minWidth: 0,
+                      height: '100%'
+                    }}
+                    title={c.name}
+                  >
+                    <span style={{ fontSize: 28, lineHeight: 1 }}>{emojiFor(c.icon, c.id)}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center', color: '#0f172a', fontWeight: 600 }}>{c.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ height: 1, background: '#e5e7eb', margin: '6px 0' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, justifyContent: 'center' }}>
               <button
-                key={c.id}
-                onClick={() => setSelected((s) => ({ ...s, [c.id]: !s[c.id] }))}
+                onClick={fetchNearby}
+                disabled={loading}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
+                  background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                  color: 'white',
+                  border: 0,
                   borderRadius: 10,
-                  padding: '8px 10px',
-                  border: active ? `1px solid ${c.color || '#111827'}` : '1px solid #e5e7eb',
-                  background: active ? (c.color || '#111827') : '#ffffff',
-                  color: active ? '#ffffff' : '#111827',
+                  padding: '10px 12px',
                   cursor: 'pointer',
-                  minWidth: 0
+                  fontWeight: 700
                 }}
-                title={c.name}
               >
-                <span>{emojiFor(c.icon, c.id)}</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{c.name}</span>
+                {loading ? 'Cargando...' : 'Actualizar'}
               </button>
-            )
-          })}
-        </div>
-        <div style={{ height: 1, background: '#e5e7eb', margin: '10px 0' }} />
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, marginTop: 8 }}>
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
-          Seguir mi ubicación
-        </label>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'center' }}>
-          <button
-            onClick={fetchNearby}
-            disabled={loading}
-            style={{
-              background: '#111827',
-              color: 'white',
-              border: 0,
-              borderRadius: 8,
-              padding: '8px 12px',
-              cursor: 'pointer'
-            }}
-          >
-            {loading ? 'Cargando...' : 'Actualizar'}
-          </button>
-          <button
-            onClick={() => { setSelected({}); setPlaces([]) }}
-            style={{
-              background: '#f3f4f6',
-              color: '#111827',
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-              padding: '8px 12px',
-              cursor: 'pointer'
-            }}
-          >
-            Limpiar
-          </button>
-        </div>
-        <div style={{ fontSize: 12, color: '#4b5563', textAlign: 'center', marginTop: 6 }}>{places.length} lugares</div>
-        {error && <span style={{ display: 'inline-block', marginTop: 8, color: '#ef4444', background: '#fee2e2', borderRadius: 6, padding: '6px 8px' }}>{error}</span>}
+              <button
+                onClick={() => { setSelected({}); setPlaces([]) }}
+                style={{
+                  background: '#f3f4f6',
+                  color: '#111827',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Limpiar
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: '#4b5563', textAlign: 'center', marginTop: 6 }}>{places.length} lugares</div>
+            {error && <span style={{ display: 'inline-block', marginTop: 8, color: '#ef4444', background: '#fee2e2', borderRadius: 6, padding: '6px 8px' }}>{error}</span>}
+          </>
+        )}
+
+        {activeTab === 'profile' && (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ width: '100%', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, padding: 16, boxShadow: '0 12px 30px rgba(2,6,23,0.06)', margin: '10px auto 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, justifyContent: 'center' }}>
+                <div style={{ width: 52, height: 52, borderRadius: 9999, background: 'linear-gradient(135deg, #4f46e5 0%, #8b5cf6 100%)', color: '#ffffff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 18 }}>
+                  {profileInitials}
+                </div>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontWeight: 900, fontSize: 18, letterSpacing: 0.2 }}>{user?.name || 'Usuario'}</div>
+                  <div style={{ fontSize: 13, color: '#6b7280', wordBreak: 'break-all' }}>{user?.email}</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>Miembro desde</div>
+                  <div>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#eef2ff', color: '#4338ca', borderRadius: 9999, padding: '6px 10px', fontWeight: 700, fontSize: 12 }}>
+                      📅 {memberSince || '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'favorites' && (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ width: '100%', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, padding: 16, boxShadow: '0 12px 30px rgba(2,6,23,0.06)', margin: '10px auto 0' }}>
+              <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 10, textAlign: 'center' }}>Mis favoritos</div>
+              {favorites.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#6b7280', textAlign: 'center' }}>Aún no tienes favoritos. Abre un lugar y toca el corazón ♡.</div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateRows: '1fr auto', gap: 8 }}>
+                  <div style={{ maxHeight: 320, overflowY: 'auto', display: 'grid', gap: 10 }}>
+                    {favorites.map((f) => {
+                      const active = !!selectedFavoriteIds[f.id]
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => toggleFavoriteSelection(f.id)}
+                          title={f.name}
+                          style={{
+                            border: active ? '1px solid #4f46e5' : '1px solid #e5e7eb',
+                            background: '#ffffff',
+                            borderRadius: 12,
+                            padding: 10,
+                            boxShadow: '0 8px 20px rgba(2,6,23,0.05)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: '#ef4444' }}>❤</span>
+                            <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{f.name}</div>
+                          </div>
+                          {f.category && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>{f.category}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div style={{ position: 'sticky', bottom: 0, background: '#ffffff', paddingTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <button onClick={clearFavoriteSelection} style={{ background: '#f3f4f6', color: '#111827', border: '1px solid #e5e7eb', borderRadius: 10, padding: '8px 10px', cursor: 'pointer', fontWeight: 600 }}>
+                        Mostrar todos
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#4b5563', textAlign: 'center', marginTop: 6 }}>
+                      Mostrando {Object.keys(selectedFavoriteIds).some((k) => selectedFavoriteIds[k]) ? 'solo selección' : 'todos'} los favoritos en el mapa
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </aside>
       <div style={{ flex: 1, position: 'relative' }}>
         {!loading && (
@@ -339,9 +499,9 @@ export default function MapView() {
               <Popup>Tu ubicación aproximada</Popup>
             </Marker>
             {markers.map((m) => (
-              <Marker key={m.id} position={[m.lat, m.lng]} icon={categoryIcons[m.category]}>
+              <Marker key={m.id} position={[m.lat, m.lng]} icon={categoryIcons[m.category] || createDivIcon('#111827', '📍')}>
                 <Popup>
-                  <PlacePopupContent place={m} />
+                  <PlacePopupContent place={m} isFav={isFavorite(m.id)} onToggleFav={toggleFavorite} />
                 </Popup>
               </Marker>
             ))}

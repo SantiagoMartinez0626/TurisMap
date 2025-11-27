@@ -11,9 +11,13 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=3000
+      - MONGO_URI=mongodb://mongo:27017/turismap
+      - JWT_SECRET=please-change-this-secret
     stdin_open: true
     tty: true
     restart: unless-stopped
+    depends_on:
+      - mongo
   frontend:
     container_name: frontend
     build:
@@ -30,3 +34,14 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+  mongo:
+    container_name: mongo
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
