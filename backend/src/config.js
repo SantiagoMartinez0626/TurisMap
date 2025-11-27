@@ -36,6 +36,30 @@ const config = {
       icon: 'leaf',
       color: '#27ae60'
     },
+    colegios: {
+      tags: ['amenity=school', 'amenity=kindergarten', 'amenity=college', 'amenity=university'],
+      name: 'Colegios',
+      icon: 'school',
+      color: '#0ea5e9'
+    },
+    clinicas: {
+      tags: ['amenity=clinic', 'amenity=doctors', 'healthcare=clinic'],
+      name: 'Clínicas',
+      icon: 'medkit',
+      color: '#10b981'
+    },
+    hospitales: {
+      tags: ['amenity=hospital', 'healthcare=hospital'],
+      name: 'Hospitales',
+      icon: 'medical',
+      color: '#ef4444'
+    },
+    estaciones: {
+      tags: ['railway=station', 'public_transport=station', 'amenity=bus_station', 'railway=halt', 'station=subway', 'station=light_rail'],
+      name: 'Estaciones',
+      icon: 'train',
+      color: '#6366f1'
+    },
     restaurantes: {
       tags: ['amenity=restaurant', 'amenity=cafe', 'amenity=bar', 'amenity=fast_food'],
       name: 'Restaurantes',

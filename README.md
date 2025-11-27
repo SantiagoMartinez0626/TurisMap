@@ -1,186 +1,144 @@
-# 🗺️ TurisMap - Explorador Turístico
+# 🗺️ TurisMap - Explorador Turístico (Web)
 
-Una aplicación móvil que te permite descubrir atracciones turísticas cercanas a tu ubicación actual, con filtros por categoría y un mapa interactivo. **¡Completamente gratuita usando OpenStreetMap!**
+Aplicación web para descubrir atracciones turísticas cercanas a tu ubicación, con filtros por categoría y un mapa interactivo. Se alimenta de OpenStreetMap mediante Overpass API, por lo que es 100% gratuita (no requiere API keys).
+
+> Nota: El frontend fue migrado de Expo/React Native a Web. Ya no se utiliza Expo Go.
 
 ## ✨ Características
 
-- 🗺️ **Mapa interactivo** usando React Native Maps
-- 📍 **Ubicación en tiempo real** del usuario
-- 🏛️ **Filtros por categoría**: Museos, Parques, Restaurantes, Monumentos, Iglesias, Teatros, Centros Comerciales, y más
-- 📱 **Interfaz moderna y intuitiva** con diseño responsive
-- 🔍 **Búsqueda de lugares cercanos** usando OpenStreetMap + Overpass API
-- 💰 **100% GRATIS** - No requiere API keys ni tarjetas de crédito
-- 📊 **Información detallada** de cada lugar (dirección, teléfono, web, horarios)
+- 🗺️ **Mapa interactivo** (Leaflet + React)
+- 📍 **Ubicación en tiempo real** (opción de seguir tu ubicación)
+- 🏛️ **Filtros por categoría** (museos, parques, restaurantes, hospitales, etc.)
+- 📱 **UI responsive** con enfoque en simplicidad
+- 🔍 **Búsqueda de lugares cercanos** con Overpass API (OSM)
+- 📊 **Detalles por lugar**: dirección, teléfono, web y horarios (si existen)
 
 ## 🏗️ Arquitectura
 
-- **Frontend**: React Native con Expo
+- **Frontend**: React 18 + Vite + React-Leaflet
 - **Backend**: Node.js + Express
-- **Mapas**: React Native Maps
-- **API**: OpenStreetMap + Overpass API (completamente gratuito)
-- **Ubicación**: Expo Location
-- **Contenedores**: Docker
+- **Datos**: OpenStreetMap + Overpass API
+- **Contenedores**: Docker + Docker Compose
 
-## 🚀 Instalación y Configuración
+## 🚀 Ejecución
 
-### Prerrequisitos
-
-- Docker y Docker Compose instalados
-- **¡No se requiere API Key!** OpenStreetMap es completamente gratuito
-
-### 1. Ejecutar Script de Instalación
+### Opción A: con Docker Compose (recomendada)
+Requisitos: Docker y Docker Compose
 
 ```bash
-# En la raíz del proyecto
-./setup.sh
+docker compose up --build
 ```
 
-### 2. ¡Listo!
+Servicios:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:3000`
 
-- **Backend**: http://localhost:3000
-- **Expo DevTools**: http://localhost:19000
-- **App**: Escanea el código QR con la app Expo Go
+### Opción B: local sin Docker
+Requisitos: Node.js 18+
 
----
+1) Backend
+```bash
+cd backend
+npm install
+npm run dev   # arranca en http://localhost:3000
+```
 
-## 📱 Uso de la Aplicación
+2) Frontend
+```bash
+cd frontend
+npm install
+# Opcional: export VITE_BACKEND_URL=http://localhost:3000
+npm run dev   # arranca en http://localhost:5173
+```
 
-1. **Permisos de ubicación**: La app solicitará acceso a tu ubicación
-2. **Mapa principal**: Visualiza tu ubicación actual y lugares cercanos
-3. **Filtros**: Usa los botones de categoría para filtrar lugares
-4. **Información**: Toca las tarjetas de lugares para ver más detalles
-5. **Centrar mapa**: Usa el botón de ubicación para volver a tu posición
+El frontend está configurado para proxyear `/api` hacia `VITE_BACKEND_URL` (por defecto `http://backend:3000` en Docker).
+
+## ⚙️ Variables de entorno
+
+- Frontend
+  - `VITE_BACKEND_URL` (ej.: `http://localhost:3000`)
+- Backend
+  - `PORT` (por defecto `3000`)
+  - `HOST` (por defecto `0.0.0.0`)
+  - `NODE_ENV` (`development` | `production`)
+  - `CORS_ORIGIN` (en desarrollo `*`; en producción, configurarlo adecuadamente)
 
 ## 🔧 Endpoints de la API
 
-### Obtener lugares cercanos
+Obtener lugares cercanos:
 ```
-GET /api/places/nearby?lat={lat}&lng={lng}&radius={radius}
-```
-
-### Buscar por categoría
-```
-GET /api/places/search?lat={lat}&lng={lng}&category={category}
+GET /api/places/nearby?lat={lat}&lng={lng}&radius={radius}[&category={category}]
 ```
 
-### Obtener detalles de un lugar
+Buscar por categoría:
+```
+GET /api/places/search?lat={lat}&lng={lng}&category={category}[&radius={radius}]
+```
+
+Detalles de un lugar:
 ```
 GET /api/places/details/{placeId}
 ```
 
-### Obtener categorías disponibles
+Categorías disponibles:
 ```
 GET /api/places/categories
 ```
 
-## 🎨 Categorías Disponibles
+## 📱 Uso
 
-- **museos** → Museos y galerías de arte
-- **parques** → Parques y áreas verdes
-- **restaurantes** → Restaurantes, cafés y bares
-- **hoteles** → Hoteles, hostales y casas de huéspedes
-- **monumentos** → Monumentos históricos y atracciones turísticas
-- **iglesias** → Iglesias y templos
-- **teatros** → Teatros y cines
-- **centros_comerciales** → Centros comerciales y mercados
-- **bibliotecas** → Bibliotecas públicas
-- **zoos** → Zoológicos y acuarios
-- **parques_tematicos** → Parques temáticos y de diversiones
-- **estadios** → Estadios y centros deportivos
+1. Permite el acceso a tu ubicación en el navegador.
+2. El mapa se centrará en tu posición y cargará lugares cercanos.
+3. Usa los filtros de categoría para ajustar resultados.
+4. Haz clic en un marcador para ver detalles del lugar.
+5. Activa “Seguir mi ubicación” para rastreo en tiempo real.
 
-## 💡 Ventajas de OpenStreetMap
+## 🎨 Categorías (ejemplos)
 
-- **✅ Completamente gratuito** - No hay costos ocultos
-- **✅ Datos abiertos** - Información verificada por la comunidad
-- **✅ Sin límites** - No hay cuotas mensuales ni restricciones
-- **✅ Actualizaciones en tiempo real** - La comunidad actualiza constantemente
-- **✅ Cobertura global** - Disponible en todo el mundo
-- **✅ Sin registro requerido** - Comienza a usar inmediatamente
+- Principales: **museos**, **parques**, **restaurantes**, **hoteles**, **monumentos**, **iglesias**, **teatros**, **centros_comerciales**
+- Otras: **bibliotecas**, **zoos**, **acuarios**, **parques_tematicos**, **estadios**, **cines**, **colegios**, **clinicas**, **hospitales**, **estaciones**
 
-## 🐛 Solución de Problemas
+## 🏭 Producción (sugerencias)
 
-### Error de ubicación
-- Verifica que la app tenga permisos de ubicación
-- Asegúrate de que el GPS esté activado
+- Frontend:
+  - Genera build estático: `cd frontend && npm run build` (salida en `dist/`)
+  - Sirve estáticos con Nginx o cualquier hosting de archivos estáticos
+- Backend:
+  - Ejecutar con `npm start` en lugar de `nodemon`
+  - Configurar CORS y variables de entorno adecuadamente
+- Docker:
+  - Considerar imágenes multi-stage y separar dev/prod
 
-### Error de conexión con el backend
-- Verifica que el contenedor del backend esté ejecutándose
-- Revisa los logs: `docker-compose logs backend`
+## 🐛 Solución de problemas
 
-### Lenta respuesta de la API
-- OpenStreetMap puede ser más lento que Google Places
-- Aumenta el timeout en la configuración si es necesario
+- Ubicación: revisa permisos del navegador y GPS/servicios de ubicación.
+- Backend: valida que el servicio esté arriba; logs: `docker compose logs backend`.
+- Rendimiento: Overpass puede ser lento; ajusta `requestTimeout`/radios en `backend/src/config.js`.
 
-## 📁 Estructura del Proyecto
+## 📁 Estructura del proyecto
 
 ```
 TurisMap/
-├── backend/                 # Servidor Node.js
+├── backend/
 │   ├── src/
-│   │   ├── index.js        # API principal con OpenStreetMap
-│   │   └── config.js       # Configuración del servidor
+│   │   ├── index.js
+│   │   └── config.js
 │   ├── package.json
 │   └── Dockerfile
-├── mobile/                  # App React Native
-│   ├── app/
-│   │   ├── index.js        # Pantalla principal del mapa
-│   │   └── config.js       # Configuración de la app
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── MapView.jsx
+│   ├── index.html
 │   ├── package.json
 │   └── Dockerfile
-└── docker-compose.yml       # Configuración de contenedores
-```
-
-## 🛠️ Desarrollo
-
-### Modo desarrollo
-```bash
-# Backend con auto-reload
-docker-compose exec backend npm run dev
-
-# Mobile con Expo
-docker-compose exec mobile npm start
-```
-
-### Logs en tiempo real
-```bash
-docker-compose logs -f
+└── docker-compose.yml
 ```
 
 ## 📄 Licencia
 
 Este proyecto está bajo la Licencia MIT.
-
-## 🤝 Contribuir
-
-1. Fork el proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📞 Soporte
-
-Si tienes problemas o preguntas:
-- Revisa los logs de Docker
-- Verifica la conectividad a internet (necesaria para OpenStreetMap)
-- Asegúrate de que todas las dependencias estén instaladas
-
----
-
-## 🎯 ¿Por qué OpenStreetMap?
-
-**Google Places API** requiere:
-- Tarjeta de crédito para verificación
-- Cuotas mensuales después del período gratuito
-- Límites estrictos de uso
-- Registro en Google Cloud Console
-
-**OpenStreetMap** ofrece:
-- ✅ Completamente gratuito
-- ✅ Sin límites de uso
-- ✅ Sin registro requerido
-- ✅ Datos abiertos y verificados
-- ✅ Comunidad activa y actualizaciones constantes
 
 ---
 

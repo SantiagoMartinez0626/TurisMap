@@ -12,27 +12,35 @@ app.use(cors(config.cors));
 app.use(express.json());
 
 // Función para construir consulta Overpass QL
-function buildOverpassQuery(lat, lng, radius, category) {
+function buildOverpassQuery(lat, lng, radius, categoriesInput) {
   const bbox = calculateBoundingBox(lat, lng, radius);
   
   let query = `[out:json][timeout:25];(`;
   
-  if (category && category !== 'todos') {
-    const categoryConfig = config.categories[category];
-    if (categoryConfig && categoryConfig.tags) {
-      categoryConfig.tags.forEach(tag => {
-        const [key, value] = tag.split('=');
-        if (value) {
-          query += `\n  node["${key}"="${value}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
-          query += `\n  way["${key}"="${value}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
-          query += `\n  relation["${key}"="${value}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
-        } else {
-          query += `\n  node["${key}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
-          query += `\n  way["${key}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
-          query += `\n  relation["${key}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
-        }
-      });
-    }
+  const categories = Array.isArray(categoriesInput)
+    ? categoriesInput
+    : (typeof categoriesInput === 'string' && categoriesInput.length > 0
+        ? categoriesInput.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+        : null);
+
+  if (categories && categories.length > 0) {
+    categories.forEach(cat => {
+      const categoryConfig = config.categories[cat];
+      if (categoryConfig && categoryConfig.tags) {
+        categoryConfig.tags.forEach(tag => {
+          const [key, value] = tag.split('=');
+          if (value) {
+            query += `\n  node["${key}"="${value}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
+            query += `\n  way["${key}"="${value}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
+            query += `\n  relation["${key}"="${value}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
+          } else {
+            query += `\n  node["${key}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
+            query += `\n  way["${key}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
+            query += `\n  relation["${key}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
+          }
+        });
+      }
+    });
   } else {
     // Buscar todos los lugares turísticos
     query += `\n  node["tourism"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
@@ -49,7 +57,8 @@ function buildOverpassQuery(lat, lng, radius, category) {
     query += `\n  relation["historic"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
   }
   
-  query += `\n);\nout body;\n>;\nout skel qt;`;
+  // Pedimos center para ways/relations para poder ubicarlos en el mapa
+  query += `\n);\nout center qt;`;
   
   return query;
 }
@@ -68,14 +77,14 @@ function calculateBoundingBox(lat, lng, radius) {
 }
 
 // Función para obtener lugares turísticos cercanos usando OpenStreetMap
-async function getNearbyPlaces(lat, lng, radius = config.osm.defaultRadius, category = null) {
+async function getNearbyPlaces(lat, lng, radius = config.osm.defaultRadius, categories = null) {
   try {
-    const query = buildOverpassQuery(lat, lng, radius, category);
-    
-    const response = await axios.post(config.osm.overpassBaseUrl, query, {
+    const query = buildOverpassQuery(lat, lng, radius, categories);
+    const payload = `data=${encodeURIComponent(query)}`;
+    const response = await axios.post(config.osm.overpassBaseUrl, payload, {
       timeout: config.osm.requestTimeout,
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'User-Agent': 'TurisMap/1.0'
       }
     });
@@ -85,22 +94,27 @@ async function getNearbyPlaces(lat, lng, radius = config.osm.defaultRadius, cate
       const seenPlaces = new Set();
       
       response.data.elements.forEach(element => {
-        if (element.type === 'node' && element.tags && element.tags.name) {
+        if (element.tags && element.tags.name) {
           const placeId = `${element.type}_${element.id}`;
           
           if (!seenPlaces.has(placeId)) {
             seenPlaces.add(placeId);
             
             // Calcular distancia desde el punto de origen
-            const distance = calculateDistance(lat, lng, element.lat, element.lon);
+            const elLat = element.lat || (element.center && element.center.lat);
+            const elLon = element.lon || (element.center && element.center.lon);
+            if (typeof elLat !== 'number' || typeof elLon !== 'number') {
+              return;
+            }
+            const distance = calculateDistance(lat, lng, elLat, elLon);
             
             if (distance <= radius) {
               const place = {
                 id: placeId,
                 name: element.tags.name,
                 location: {
-                  lat: element.lat,
-                  lng: element.lon
+                  lat: elLat,
+                  lng: elLon
                 },
                 tags: element.tags,
                 distance: Math.round(distance),
@@ -121,14 +135,17 @@ async function getNearbyPlaces(lat, lng, radius = config.osm.defaultRadius, cate
       
       // Ordenar por distancia y limitar resultados
       return places
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, config.limits.maxPlacesPerRequest);
+        .sort((a, b) => a.distance - b.distance);
     }
     
     return [];
   } catch (error) {
-    console.error('Error obteniendo lugares de OpenStreetMap:', error.message);
-    throw error;
+    const status = error.response?.status || 500;
+    const message = error.response?.data || error.message;
+    console.error('Error obteniendo lugares de OpenStreetMap:', status, message);
+    const err = new Error(typeof message === 'string' ? message : 'Error en Overpass');
+    err.status = status;
+    throw err;
   }
 }
 
@@ -176,12 +193,12 @@ async function getPlaceDetails(placeId) {
     }
     
     // Construir consulta para obtener detalles específicos
-    const query = `[out:json][timeout:25];${type}(${id});out body;`;
-    
-    const response = await axios.post(config.osm.overpassBaseUrl, query, {
+    const query = `[out:json][timeout:25];${type}(${id});out center;`;
+    const payload = `data=${encodeURIComponent(query)}`;
+    const response = await axios.post(config.osm.overpassBaseUrl, payload, {
       timeout: config.osm.requestTimeout,
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'User-Agent': 'TurisMap/1.0'
       }
     });
@@ -189,12 +206,14 @@ async function getPlaceDetails(placeId) {
     if (response.data && response.data.elements && response.data.elements.length > 0) {
       const element = response.data.elements[0];
       
+      const elLat = element.lat || (element.center && element.center.lat);
+      const elLon = element.lon || (element.center && element.center.lon);
       return {
         id: placeId,
         name: element.tags.name || 'Sin nombre',
         location: {
-          lat: element.lat,
-          lng: element.lon
+          lat: elLat,
+          lng: elLon
         },
         tags: element.tags,
         address: buildAddress(element.tags),
@@ -312,20 +331,22 @@ app.get('/api/places/nearby', async (req, res) => {
       });
     }
     
-    const places = await getNearbyPlaces(parseFloat(lat), parseFloat(lng), parseInt(radius), category);
+    const categories = category ? String(category).split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : null;
+    const places = await getNearbyPlaces(parseFloat(lat), parseFloat(lng), parseInt(radius), categories);
     res.json({ 
       places, 
       count: places.length,
-      query: { lat, lng, radius, category },
+      query: { lat, lng, radius, category: categories },
       timestamp: new Date().toISOString(),
       dataSource: 'OpenStreetMap'
     });
     
   } catch (error) {
-    console.error('Error en /api/places/nearby:', error);
-    res.status(500).json({ 
-      error: 'Error interno del servidor',
-      message: config.server.environment === 'development' ? error.message : 'Error interno'
+    const status = error.status || error.response?.status || 500;
+    console.error('Error en /api/places/nearby:', error.message || error);
+    res.status(status).json({ 
+      error: 'Error en servicio de datos',
+      message: config.server.environment === 'development' ? (error.message || 'Error') : 'Error al consultar datos'
     });
   }
 });
@@ -388,7 +409,7 @@ app.get('/api/places/search', async (req, res) => {
       });
     }
     
-    const places = await getNearbyPlaces(parseFloat(lat), parseFloat(lng), parseInt(radius), category);
+    const places = await getNearbyPlaces(parseFloat(lat), parseFloat(lng), parseInt(radius), [category]);
     
     res.json({ 
       places, 
